@@ -1,0 +1,10 @@
+# Working files of each asset stay local - the repo carries only the skills.
+**/assets/*
+!**/assets/README.md
+
+__pycache__/
+*.pyc
+*.blend1
+*.blend@
+.DS_Store
+Thumbs.db

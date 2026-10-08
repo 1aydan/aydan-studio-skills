@@ -2,6 +2,9 @@
 **/assets/*
 !**/assets/README.md
 
+# Machine-specific runtime locations (e.g. senior-sound-designer/local.json)
+**/local.json
+
 __pycache__/
 *.pyc
 *.blend1

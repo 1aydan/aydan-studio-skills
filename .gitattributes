@@ -5,3 +5,5 @@
 *.fbx binary
 *.png binary
 *.mp4 binary
+*.wav binary
+*.ogg binary

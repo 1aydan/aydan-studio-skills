@@ -22,9 +22,25 @@ Typical flow: "model this concept as a stylized game character" (senior-modeler:
 overlay -> model passes -> UVs/textures -> QA -> export -> present -> handoff), then "animate it" (senior-animator:
 reads the handoff, asks style and clips -> rig -> clips -> QA -> reel -> export).
 
+### Audio
+| Skill | What it does |
+|---|---|
+| [senior-sound-designer](senior-sound-designer/) | Makes game-ready sound effects: writes a brief, generates several takes on your GPU with Stable Audio 3, picks the best ones from waveform and spectrogram checks, layers and processes them, then exports named WAV variations with an audition page so you can listen to everything. |
+
+Requirements: Python 3 (stdlib only), ffmpeg/ffprobe on PATH, and the sa3.cpp runtime + Stable Audio 3 models
+(small-sfx + medium). Install them once with
+`python senior-sound-designer/scripts/setup_sa3.py --home <folder> --variant small-sfx --variant medium`
+(writes `senior-sound-designer/local.json`, git-ignored). Tested on an RTX 5070 Ti: ~1-3 s per generation; CPU works
+but is ~10x slower. LM Studio can download the GGUF files but cannot run them - it has no audio runtime.
+
+Typical flow: "make a sword impact, a fireball and a menu click, 3 variations each" (senior-sound-designer: brief ->
+takes on both models -> pick from review grids -> layer + process -> loudness + true-peak -> QA -> export ->
+`review/audition.html`). The agent picks takes from pictures and numbers, not by ear - always do a listening pass.
+
 ## Getting started - example prompts
-Open Blender with the MCP add-on connected, then start a conversation with your agent. You don't need to know the
-skill names: describe the job and the matching skill kicks in. It asks its intake questions before building anything.
+For the Blender skills, open Blender with the MCP add-on connected; the sound designer only needs its runtime
+installed. Then start a conversation with your agent. You don't need to know the skill names: describe the job and
+the matching skill kicks in. It asks its intake questions before building anything.
 
 **Model from concept art (senior-modeler)**
 ```
@@ -47,10 +63,21 @@ all the clips in one video.
 It reads the handoff notes, asks for the animation style and anything still open (weapon, root motion, layered
 attacks), then rigs, animates, QA-checks, renders the reel and exports `SK_` + one `A_` FBX per clip.
 
+**Sound effects (senior-sound-designer)**
+```
+Use the senior sound designer skill to make very short fantasy RPG SFX:
+sword swing, sword impact on armor, fireball cast, goblin growl and a menu
+select. 3 variations each, 48 kHz 24-bit WAV, named like SFX_Sword_Impact_01.wav.
+```
+It sets a length target per sound (UI ~0.15-0.4 s, hits ~0.5 s, spells/creatures ~1 s), generates takes on both
+models, picks from review grids and QA numbers, layers and processes each sound, exports the variations and hands
+you `review/audition.html` to listen to everything in a browser.
+
 **Other ways in**
 - "Model a stylized wooden treasure chest with a lid that opens, baked textures, for Unity." (no concept needed)
 - "I opened my character in Blender - rig it and make a run cycle and a jump." (animator on an existing model)
 - "Give me the presentation pack for the lantern so I can send it to the team." (modeler, stage 9)
+- "Make a 30 second seamless dungeon ambience loop and a magic portal hum loop." (sound designer)
 
 ## Skills that work together
 Install them side by side in the same skills folder. They find each other as sibling folders by the `name:` in their

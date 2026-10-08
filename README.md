@@ -37,6 +37,20 @@ Typical flow: "make a sword impact, a fireball and a menu click, 3 variations ea
 takes on both models -> pick from review grids -> layer + process -> loudness + true-peak -> QA -> export ->
 `review/audition.html`). The agent picks takes from pictures and numbers, not by ear - always do a listening pass.
 
+### Game engines (Unreal, Unity, Godot)
+| Skill | What it does |
+|---|---|
+| [senior-gameplay-engineer](senior-gameplay-engineer/) | General gameplay programmer: designs, writes, fixes, reviews and explains gameplay code and systems (movement, cameras, combat, abilities, AI, interaction, inventory, progression, UI logic, saves, multiplayer). Simple, clean, concise code to each engine's official coding standard (Epic C++ Coding Standard, Unity C# style guide, Godot GDScript/C# style guides) plus its gameplay best practices. Works in your project (reads its version and conventions first) or with no project. Optional QA: headless compile and tests. |
+
+Requirements: Python 3 (stdlib only) and the project's engine installed (found automatically - Epic launcher /
+source builds, Unity Hub, or PATH; override in `senior-gameplay-engineer/local.json`). Optional QA uses the engine's
+own command-line tools: Unreal `Build.bat` + `UnrealEditor-Cmd` automation tests, Unity batchmode + Test Runner,
+Godot `--headless` (+ `dotnet build` for C#). Close the editor on the project before a QA build.
+
+Typical flow: "add a dash with a cooldown to my character" (senior-gameplay-engineer: inspect the project -> ask only
+what's open -> short plan for bigger features -> code in the project's style -> optional compile/tests -> files
+changed, editor setup, tuning values and playtest steps).
+
 ## Getting started - example prompts
 For the Blender skills, open Blender with the MCP add-on connected; the sound designer only needs its runtime
 installed. Then start a conversation with your agent. You don't need to know the skill names: describe the job and
@@ -73,11 +87,23 @@ It sets a length target per sound (UI ~0.15-0.4 s, hits ~0.5 s, spells/creatures
 models, picks from review grids and QA numbers, layers and processes each sound, exports the variations and hands
 you `review/audition.html` to listen to everything in a browser.
 
+**Gameplay code (senior-gameplay-engineer)**
+```
+Use the senior gameplay engineer skill on F:\Games\MyGame. Add a dodge roll
+to the player: tap to roll in the move direction, 0.4 s of i-frames, 1 s
+cooldown, and expose the numbers so I can tune them in the editor.
+```
+It inspects the project (engine, version, language, conventions), asks only what changes the design (cancel
+rules, multiplayer), proposes a short plan, writes the code in the project's style and hands you the editor setup,
+tuning values and playtest steps. Add "and compile it" to run the optional headless build/tests.
+
 **Other ways in**
 - "Model a stylized wooden treasure chest with a lid that opens, baked textures, for Unity." (no concept needed)
 - "I opened my character in Blender - rig it and make a run cycle and a jump." (animator on an existing model)
 - "Give me the presentation pack for the lantern so I can send it to the team." (modeler, stage 9)
 - "Make a 30 second seamless dungeon ambience loop and a magic portal hum loop." (sound designer)
+- "Hook the animator's Hit events on the nutcracker's attack clips up to damage in Unreal." (gameplay engineer)
+- "Review my Godot player controller against the GDScript style guide." (gameplay engineer)
 
 ## Skills that work together
 Install them side by side in the same skills folder. They find each other as sibling folders by the `name:` in their

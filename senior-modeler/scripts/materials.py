@@ -88,6 +88,8 @@ def _edge_mask(nt, x, y, radius):
 def _ao(nt, x, y, distance):
     ao = _n(nt, 'ShaderNodeAmbientOcclusion', (x, y), Distance=distance)
     ao.samples = 16
+    ao.only_local = True               # cavity/dirt of the part itself; neighbouring parts across a gap painted
+                                       # hard-edged dirt bands (inter-part occlusion is the AO map's job)
     return ao.outputs['AO']
 
 

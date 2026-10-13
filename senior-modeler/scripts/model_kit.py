@@ -297,6 +297,8 @@ def extrude(name, pts, depth, plane='XZ', loc=(0, 0, 0), rot=(0, 0, 0), mat=None
     for e in bm.edges:
         if any(len(f.verts) > 4 for f in e.link_faces):
             e.seam = True
+    lo = min(range(k), key=lambda i: (pts[i][1], pts[i][0]))   # cut the side band open at its lowest point (a closed
+    bm.edges.get((f0[lo], f1[lo])).seam = True                 # loop unwraps as a distorted ring)
     us = [p[0] for p in pts]
     vs = [p[1] for p in pts]
     return _finish(name, bm, loc, rot, mat, parent, bevel, shade, min(max(us) - min(us), max(vs) - min(vs), depth))

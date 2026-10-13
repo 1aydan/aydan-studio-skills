@@ -133,6 +133,9 @@ loops repeated (LOOPS, default 2), a short hold between clips, and a burnt-in la
 `LOOP xN` / `root motion` (only when the root really travels) and event markers. Each clip renders once as PNGs, a
 temporary sequencer scene assembles and encodes them, then everything temporary is removed and teardown() runs.
 Send it to the user after the contact sheets - it is the quickest way to review or share the whole set.
+**Beauty reel** (optional, for sharing): `reel.py` with `LOOK='beauty'` -> `<Char>_beauty.mp4`, full-colour EEVEE
+1920x1080 with the character's own materials, a dark floor and soft lights riding the camera (`setup(look='beauty')`).
+Slow (EEVEE, ~1-2 s/frame) - the MCP call times out while Blender keeps rendering; wait for the mp4.
 Floor grid + height ring, Workbench, review objects in `ANIM_Review` (never exported). Build a proxy
 for any weapon without a mesh (parented to the weapon bone, shaft through the socket) and state the assumption.
 Close-up the hands for grips; render stacked sheets of all clips; delete any test duplicates before rendering.

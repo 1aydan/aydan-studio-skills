@@ -77,9 +77,36 @@ def _image(name, res, color):
     if img is None or tuple(img.size) != (res, res):
         if img is not None:
             bpy.data.images.remove(img)
-        img = bpy.data.images.new(name, res, res, alpha=False, float_buffer=False)
+        img = bpy.data.images.new(name, res, res, alpha=True, float_buffer=False)
     img.colorspace_settings.name = 'sRGB' if color else 'Non-Color'
     return img
+
+
+def _dilate(img, px):
+    """Bake margin done right: grow every island into texels NO object baked (alpha 0) only. Blender bakes objects
+    one at a time and each object's own margin overwrites neighbouring objects' baked texels when islands are closer
+    than the margin (pack gaps are smaller): foreign colour bands along island edges."""
+    w, h = img.size
+    a = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(a)
+    a = a.reshape(h, w, 4)
+    done = a[..., 3] > 0.5
+    col = a[..., :3] * done[..., None]
+    for _ in range(px):
+        if done.all():
+            break
+        acc = np.zeros_like(col)
+        cnt = np.zeros(done.shape, np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            m = np.roll(np.roll(done, dy, 0), dx, 1)
+            acc += np.roll(np.roll(col, dy, 0), dx, 1) * m[..., None]
+            cnt += m
+        grow = ~done & (cnt > 0)
+        col[grow] = acc[grow] / cnt[grow][:, None]
+        done = done | grow
+    a[..., :3] = np.where(done[..., None], col, a[..., :3])
+    a[..., 3] = 1.0
+    img.pixels.foreach_set(a.ravel())
 
 
 def _target_nodes(mats, img):
@@ -146,10 +173,13 @@ def _has_normal_detail(mats):
 
 
 def bake(objs, asset, out_dir, res=2048, maps=('BaseColor', 'Roughness', 'Metallic', 'Normal', 'AO'), high=None,
-         cage=0.02, margin_px=16, ao_samples=64, ao_in_albedo=0.0, pack_orm=True, emissive='auto', device=None):
+         cage=0.02, margin_px=16, ao_samples=64, ao_in_albedo=0.0, pack_orm=True, emissive='auto', device=None,
+         emit_samples='auto'):
     """Bake the texture set. objs must share one non-overlapping UV atlas (uv_tools.unwrap). high: names of high-poly
     objects for Normal/AO (selected-to-active, cage extrusion in metres). ao_in_albedo 0..0.6 multiplies AO into the
-    base colour (hand-painted look; keep 0 for realistic). Returns {map: path} + notes."""
+    base colour (hand-painted look; keep 0 for realistic). emit_samples: Cycles samples for the colour/roughness/
+    metallic maps - 'auto' = 32 when a material uses ray-traced nodes (Bevel edge masks, AO: one sample bakes them as
+    speckle that averages to flat bars at a distance), else 1. Returns {map: path} + notes."""
     objs = [o for o in _objs(objs) if o.type == 'MESH']
     missing = [o.name for o in objs if not o.data.uv_layers]
     if missing:
@@ -163,13 +193,16 @@ def bake(objs, asset, out_dir, res=2048, maps=('BaseColor', 'Roughness', 'Metall
         emissive = any(_principled(m) is not None and (_principled(m).inputs['Emission Strength'].default_value > 0 and
                        tuple(_principled(m).inputs['Emission Color'].default_value)[:3] != (0, 0, 0)) for m in mats)
     todo = list(maps) + (['Emissive'] if emissive and 'Emissive' not in maps else [])
+    if emit_samples == 'auto':
+        traced = any(n.type in ('BEVEL', 'AMBIENT_OCCLUSION') for m in mats if m.node_tree for n in m.node_tree.nodes)
+        emit_samples = 32 if traced else 1
     rep, notes = {}, []
     hi = [bpy.data.objects[h] if isinstance(h, str) else h for h in (high or [])]
     try:
         sc.render.engine = 'CYCLES'
         if device:
             sc.cycles.device = device
-        sc.render.bake.margin = margin_px
+        sc.render.bake.margin = 0                       # margin: _dilate() after each map (see there)
         sc.render.bake.margin_type = 'EXTEND'
         sc.render.bake.use_clear = True
         for mp in todo:
@@ -187,7 +220,7 @@ def bake(objs, asset, out_dir, res=2048, maps=('BaseColor', 'Roughness', 'Metall
                 kind = 'EMIT' if mp in SOCKET else {'Normal': 'NORMAL', 'AO': 'AO'}.get(mp)
                 if kind is None:
                     raise ValueError('map ' + mp)
-                sc.cycles.samples = ao_samples if mp == 'AO' else 1
+                sc.cycles.samples = ao_samples if mp == 'AO' else (1 if mp == 'Normal' else emit_samples)
                 if mp in SOCKET:
                     undo = _route_socket(mats, SOCKET[mp])
                 # selected-to-active writes only into the active object: one pass per low-poly object
@@ -199,6 +232,7 @@ def bake(objs, asset, out_dir, res=2048, maps=('BaseColor', 'Roughness', 'Metall
                 _unroute(undo)
                 for m, n in targets:
                     m.node_tree.nodes.remove(n)
+            _dilate(img, margin_px)
             path = os.path.join(out_dir, 'T_%s_%s.png' % (asset, mp))
             img.filepath_raw = path
             img.file_format = 'PNG'

@@ -83,6 +83,30 @@ def freeze(objs, types=FREEZE):
     return out
 
 
+def triangulate_ngons(o):
+    """Split n-gons (>4 verts) into triangles BEFORE unwrapping. An angle-based unwrap bends an n-gon's UV outline;
+    the engine/bake triangulation of that n-gon then folds triangles out of the island onto other islands (flipped UV
+    tris, foreign texels along big flat caps). Same triangle count as the exporter's own triangulation."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    ng = [f for f in bm.faces if len(f.verts) > 4]
+
+    def convex(f):
+        vs = [v.co for v in f.verts]
+        return all((vs[i] - vs[i - 1]).cross(vs[(i + 1) % len(vs)] - vs[i]).dot(f.normal) >= -1e-9
+                   for i in range(len(vs)))
+    fan = [f for f in ng if convex(f)]               # caps: centre fan, no long slivers (they bake badly)
+    if fan:
+        bmesh.ops.poke(bm, faces=fan)
+    rest = [f for f in ng if f.is_valid and f not in fan]
+    if rest:
+        bmesh.ops.triangulate(bm, faces=rest, quad_method='BEAUTY', ngon_method='BEAUTY')
+    if ng:
+        bm.to_mesh(o.data)
+    bm.free()
+    return len(ng)
+
+
 def crease_seams(o, angle=60):
     """Add seams on hard creases (dihedral > angle): rims of solidified shells, boolean cuts, flat caps. A hard edge
     splits the normal anyway, so the seam costs nothing extra."""
@@ -101,18 +125,21 @@ def crease_seams(o, angle=60):
 
 
 def unwrap(objs, method='auto', angle=66, res=2048, margin_px=8, average=True, pack_now=True, rotate=True,
-           keep_existing=False, freeze_first=True, crease=60):
+           keep_existing=False, freeze_first=True, crease=60, ngons=True):
     """method: auto | smart | angle | stretch (minimum stretch) | conformal. auto = seams marked -> angle-based,
     otherwise smart project (angle limit `angle`). keep_existing: only unwrap objects without UVs. crease: also seam
     edges sharper than this (degrees) before angle-based unwraps (0 = off).
     freeze_first: apply generator modifiers first (bevel faces made on seams by a LIVE modifier stretch across the
-    atlas and pick up other islands' texels). Re-run build.py to get the live modifiers back."""
+    atlas and pick up other islands' texels). Re-run build.py to get the live modifiers back.
+    ngons: triangulate n-gons first (see triangulate_ngons)."""
     objs = _objs(objs)
     frozen = freeze(objs) if freeze_first else {}
     done = []
     for o in objs:
         if keep_existing and o.data.uv_layers:
             continue
+        if ngons:
+            triangulate_ngons(o)
         _ensure_layer(o)
         m = method
         if m == 'auto':

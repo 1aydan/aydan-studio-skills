@@ -12,6 +12,8 @@
 #   ANIM_Ground    1 m grid floor at z=0, plus ANIM_HeightRef ring at the gameplay height
 #   ANIM_Key/Fill/Rim  sun lights (only matter for EEVEE/Cycles; Workbench uses studio light)
 # Views are presets of camera offset relative to the pivot: front3q, front, side, back3q, top.
+# look='beauty' (optional): full-colour EEVEE with the character's own materials - dark solid floor + soft area lights
+# riding the camera pivot (same look at any height), the review grid/ring hidden. reel() then makes a beauty reel.
 import bpy, math, os, json
 import numpy as np
 from mathutils import Vector
@@ -19,6 +21,9 @@ from mathutils import Vector
 COLL = 'ANIM_Review'
 OTHER_PREVIEWS = ('Preview',)     # collections from other skills' preview set-ups (Senior Modeler)
 STATE_KEY = 'anim_review_restore'
+BEAUTY_KEY = 'anim_review_beauty'
+REVIEW_ONLY = ('ANIM_Floor', 'ANIM_HeightRef', 'ANIM_HeightPole', 'ANIM_Key', 'ANIM_Fill', 'ANIM_Rim')
+BEAUTY = ('ANIM_BeautyFloor', 'ANIM_BeautyKey', 'ANIM_BeautyFill', 'ANIM_BeautyRim')
 VIEWS = {   # direction from subject to camera (subject faces -Y), elevation in degrees
     'front3q': (Vector((0.65, -1.0, 0.0)), 12),
     'front': (Vector((0.0, -1.0, 0.0)), 5),
@@ -97,6 +102,7 @@ def teardown(remove=False):
     """Undo setup(): restore the scene camera, render engine and the other preview rigs' visibility; hide (or with
     remove=True delete) ANIM_Review. Run before saving the .blend or handing it back to the model process."""
     sc = bpy.context.scene
+    _beauty(sc, None, False)
     state = json.loads(sc[STATE_KEY]) if STATE_KEY in sc else None
     if state:
         sc.render.engine = state['engine']
@@ -122,10 +128,11 @@ def teardown(remove=False):
 
 
 def setup(arm_name, follow_bone, aim_height=0.0, distance=9.0, lens=50, height_ref=None,
-          follow_z=True, res=(960, 960), engine='BLENDER_WORKBENCH', hide_previews=OTHER_PREVIEWS):
+          follow_z=True, res=(960, 960), engine='BLENDER_WORKBENCH', hide_previews=OTHER_PREVIEWS, look='review'):
     """follow_bone: rig bone the camera tracks (use the COG for gameplay framing, Root for root-motion review).
     follow_z=False keeps the camera at aim_height (shows height changes like falls/jumps against the grid).
-    hide_previews: other skills' preview collections to hide while reviewing (restored by teardown())."""
+    hide_previews: other skills' preview collections to hide while reviewing (restored by teardown()).
+    look: 'review' (Workbench clay, grid, height ring) | 'beauty' (full-colour EEVEE, see _beauty())."""
     sc = bpy.context.scene
     hide_other_previews(hide_previews or ())
     arm = bpy.data.objects[arm_name]
@@ -148,6 +155,7 @@ def setup(arm_name, follow_bone, aim_height=0.0, distance=9.0, lens=50, height_r
     cd = bpy.data.cameras.get('ANIM_Cam') or bpy.data.cameras.new('ANIM_Cam')
     cd.lens = lens
     cd.clip_end = 500
+    cd.sensor_fit, cd.sensor_height = 'VERTICAL', 36.0     # same vertical framing at any aspect (16:9 beauty)
     cam = _obj('ANIM_Cam', cd)
     cam.parent = piv
     for c in list(cam.constraints):
@@ -240,8 +248,73 @@ def setup(arm_name, follow_bone, aim_height=0.0, distance=9.0, lens=50, height_r
             mat.diffuse_color = col
             ob.data.materials.clear()
             ob.data.materials.append(mat)
+    _beauty(sc, piv, look == 'beauty', distance)
     set_view('front3q')
     return cam
+
+
+def _beauty(sc, piv, on, distance=2.0):
+    """look='beauty': EEVEE with the meshes' own materials, a dark solid floor and soft area lights parented to the camera
+    pivot (lights scale with the camera distance, so any character size works). off: remove them and restore the
+    world / colour management / samples snapshot."""
+    for n in REVIEW_ONLY:
+        ob = bpy.data.objects.get(n)
+        if ob is not None:
+            ob.hide_render = on
+    if not on:
+        for n in BEAUTY:
+            ob = bpy.data.objects.get(n)
+            if ob is not None:
+                data, kind = ob.data, ob.type
+                bpy.data.objects.remove(ob)
+                if data is not None and data.users == 0:
+                    (bpy.data.lights if kind == 'LIGHT' else bpy.data.meshes).remove(data)
+        if BEAUTY_KEY in sc:
+            k = json.loads(sc[BEAUTY_KEY])
+            sc.view_settings.view_transform, sc.view_settings.look = k['vt'], k['look']
+            sc.world = bpy.data.worlds.get(k['world']) if k['world'] else None
+            if k['samples'] is not None:
+                sc.eevee.taa_render_samples = k['samples']
+            del sc[BEAUTY_KEY]
+        return
+    if BEAUTY_KEY not in sc:
+        sc[BEAUTY_KEY] = json.dumps(dict(vt=sc.view_settings.view_transform, look=sc.view_settings.look,
+                                         world=sc.world.name if sc.world else None,
+                                         samples=getattr(sc.eevee, 'taa_render_samples', None)))
+    ids = [e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items]
+    sc.render.engine = 'BLENDER_EEVEE_NEXT' if 'BLENDER_EEVEE_NEXT' in ids else 'BLENDER_EEVEE'
+    sc.eevee.taa_render_samples = 64
+    sc.view_settings.view_transform, sc.view_settings.look = 'Standard', 'None'
+    w = bpy.data.worlds.get('ANIM_BeautyWorld') or bpy.data.worlds.new('ANIM_BeautyWorld')
+    w.use_nodes = True
+    bg = next(n for n in w.node_tree.nodes if n.type == 'BACKGROUND')
+    bg.inputs['Color'].default_value = (0.055, 0.06, 0.07, 1)
+    sc.world = w
+    d = distance
+    me = bpy.data.meshes.get('ANIM_BeautyFloor') or bpy.data.meshes.new('ANIM_BeautyFloor')
+    me.clear_geometry()
+    s = 20 * d
+    me.from_pydata([(-s, -s, 0), (s, -s, 0), (s, s, 0), (-s, s, 0)], [], [(0, 1, 2, 3)])
+    mat = bpy.data.materials.get('ANIM_BeautyFloor_mat') or bpy.data.materials.new('ANIM_BeautyFloor_mat')
+    mat.use_nodes = True
+    bs = next(n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    bs.inputs['Base Color'].default_value = (0.07, 0.075, 0.085, 1)
+    bs.inputs['Roughness'].default_value = 0.55
+    me.materials.clear()
+    me.materials.append(mat)
+    _obj('ANIM_BeautyFloor', me)
+    for name, off, k, size, col in (('Key', (0.72, -0.78, 0.83), 37, 0.66, (1.0, 0.95, 0.88)),   # power = k * d^2
+                                    ('Fill', (-0.9, -0.55, 0.22), 12, 1.0, (0.8, 0.88, 1.0)),
+                                    ('Rim', (-0.33, 1.0, 0.72), 55, 0.45, (0.85, 0.95, 1.0))):
+        ld = bpy.data.lights.get('ANIM_Beauty' + name) or bpy.data.lights.new('ANIM_Beauty' + name, 'AREA')
+        ld.energy, ld.size, ld.color = k * d * d, size * d, col
+        lo = _obj('ANIM_Beauty' + name, ld)
+        lo.parent = piv
+        lo.location = Vector(off) * d
+        for c in list(lo.constraints):
+            lo.constraints.remove(c)
+        t = lo.constraints.new('TRACK_TO')
+        t.target, t.track_axis, t.up_axis = piv, 'TRACK_NEGATIVE_Z', 'UP_Y'
 
 
 def set_view(view='front3q', distance=None):
